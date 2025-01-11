@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+
 @Component
 public class NodeProcessor {
 
@@ -30,18 +31,18 @@ public class NodeProcessor {
         if ("TRIGGER".equalsIgnoreCase(tipoNodo)) {
             for (String node : nodeConfiguration) {
                 if ("TransformerData".equalsIgnoreCase(node)) {
-                    processedData = transformerDataService.execute(processedData);
+                    processedData = transformerDataService.execute(idProyecto, processedData);
                 } else if ("DataEnvidio".equalsIgnoreCase(node)) {
-                    tempEntrega = dataEnvidioService.execute(processedData);
+                    tempEntrega = dataEnvidioService.execute(idProyecto, processedData);
                 }
             }
         } else if ("ACCION".equalsIgnoreCase(tipoNodo)) {
             if (!nodeConfiguration.isEmpty()) {
                 String node = nodeConfiguration.get(0);
                 if ("TransformerData".equalsIgnoreCase(node)) {
-                    processedData = transformerDataService.execute(processedData);
+                    processedData = transformerDataService.execute(idProyecto, processedData);
                 } else if ("DataEnvidio".equalsIgnoreCase(node)) {
-                    tempEntrega = dataEnvidioService.execute(processedData);
+                    tempEntrega = dataEnvidioService.execute(idProyecto, processedData);
                 }
             }
         } else {
