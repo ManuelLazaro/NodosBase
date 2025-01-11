@@ -1,7 +1,7 @@
 package nodo.automti.service;
 
-import nodo.automti.nodos.DataEnvidio.DataEnvidioService;
-import nodo.automti.nodos.TransformerData.TransformerDataService;
+import nodo.automti.nodos.DataEnvidio.service.DataEnvidioService;
+import nodo.automti.nodos.TransformerData.service.TransformerDataService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
