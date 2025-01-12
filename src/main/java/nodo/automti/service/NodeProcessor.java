@@ -22,47 +22,41 @@ public class NodeProcessor {
     @Autowired
     private DataTraerService dataTraerService;
 
-    public Map<String, Object> processNodes(String idProyecto, String tipoNodo, String dataFrom, String data, List<String> nodeConfiguration) {
+    public Map<String, Object> processNodes(String idProyecto, String tipoNodo, String data, List<String> nodeConfiguration) {
         System.out.println("Iniciando procesamiento para el proyecto: " + idProyecto);
         Map<String, Object> response = new HashMap<>();
         response.put("idProyecto", idProyecto);
         response.put("tipoNodo", tipoNodo);
 
         String processedData = data;
-        String tempEntrega = null;
+        Map<String, List<Map<String, Object>>> fetchedData = new HashMap<>();
 
-        // Obtener datos de la base de datos según `dataFrom`
-        List<Map<String, Object>> fetchedData = null;
-        if (dataFrom != null && !dataFrom.isEmpty()) {
-            fetchedData = dataTraerService.getData(dataFrom);
-        }
+        // Procesamiento de nodos y obtención de datos
+        for (String node : nodeConfiguration) {
+            if (node.startsWith("DataTraer.")) {
+                String entidad = node.split("\\.")[1].toLowerCase();
+                List<Map<String, Object>> entidadData = dataTraerService.getData(entidad); // Renombrar la variable
 
-        // Procesamiento de nodos
-        if ("TRIGGER".equalsIgnoreCase(tipoNodo)) {
-            for (String node : nodeConfiguration) {
-                if ("TransformerData".equalsIgnoreCase(node)) {
-                    processedData = transformerDataService.execute(idProyecto, data, fetchedData); // Se asegura que TransformerData procese correctamente el código Python
-                } else if ("DataEnvidio".equalsIgnoreCase(node)) {
-                    tempEntrega = dataEnvidioService.execute(idProyecto, processedData);
+                // Clasificación y etiquetado interno
+                for (Map<String, Object> item : entidadData) {
+                    item.put("etiqueta", entidad.equals("cliente") ? "cliente nuevo" : "producto nuevo");
+                }
+
+                fetchedData.put(entidad, entidadData);
+            } else if ("TransformerData".equalsIgnoreCase(node)) {
+                processedData = transformerDataService.execute(idProyecto, data, (List<Map<String, Object>>) fetchedData);
+            } else if (node.startsWith("DataEnvidio.")) {
+                String entidad = node.split("\\.")[1].toLowerCase();
+                if (fetchedData.containsKey(entidad)) {
+                    dataEnvidioService.execute(idProyecto, fetchedData.get(entidad));
+                } else {
+                    System.err.println("Datos para la entidad '" + entidad + "' no encontrados en fetchedData.");
                 }
             }
-        } else if ("ACCION".equalsIgnoreCase(tipoNodo)) {
-            if (!nodeConfiguration.isEmpty()) {
-                String node = nodeConfiguration.get(0);
-                if ("TransformerData".equalsIgnoreCase(node)) {
-                    processedData = transformerDataService.execute(idProyecto, data, fetchedData);
-                } else if ("DataEnvidio".equalsIgnoreCase(node)) {
-                    tempEntrega = dataEnvidioService.execute(idProyecto, processedData);
-                }
-            }
-        } else {
-            response.put("error", "Tipo de nodo no reconocido: " + tipoNodo);
         }
 
         response.put("data", processedData);
-        if (tempEntrega != null) {
-            response.put("tempEntrega", tempEntrega);
-        }
+        response.put("fetchedData", fetchedData);
 
         return response;
     }

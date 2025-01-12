@@ -1,4 +1,3 @@
-
 package nodo.automti.nodos.DataTraer.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,14 +13,14 @@ public class DataTraerService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    public List<Map<String, Object>> getData(String dataFrom) {
+    public List<Map<String, Object>> getData(String entity) {
         String query;
-        if ("producto".equalsIgnoreCase(dataFrom)) {
+        if ("producto".equalsIgnoreCase(entity)) {
             query = "SELECT * FROM productos";
-        } else if ("cliente".equalsIgnoreCase(dataFrom)) {
+        } else if ("cliente".equalsIgnoreCase(entity)) {
             query = "SELECT * FROM clientes";
         } else {
-            throw new IllegalArgumentException("Tipo de dataFrom no soportado: " + dataFrom);
+            throw new IllegalArgumentException("Tipo de entidad no soportado: " + entity);
         }
         return jdbcTemplate.queryForList(query);
     }
