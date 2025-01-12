@@ -2,13 +2,13 @@ package nodo.automti.service;
 
 import nodo.automti.nodos.DataEnvidio.service.DataEnvidioService;
 import nodo.automti.nodos.TransformerData.service.TransformerDataService;
+import nodo.automti.nodos.DataTraer.service.DataTraerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 
 @Component
 public class NodeProcessor {
@@ -19,7 +19,10 @@ public class NodeProcessor {
     @Autowired
     private DataEnvidioService dataEnvidioService;
 
-    public Map<String, Object> processNodes(String idProyecto, String tipoNodo, String data, List<String> nodeConfiguration) {
+    @Autowired
+    private DataTraerService dataTraerService;
+
+    public Map<String, Object> processNodes(String idProyecto, String tipoNodo, String dataFrom, String data, List<String> nodeConfiguration) {
         System.out.println("Iniciando procesamiento para el proyecto: " + idProyecto);
         Map<String, Object> response = new HashMap<>();
         response.put("idProyecto", idProyecto);
@@ -28,10 +31,17 @@ public class NodeProcessor {
         String processedData = data;
         String tempEntrega = null;
 
+        // Obtener datos de la base de datos según `dataFrom`
+        List<Map<String, Object>> fetchedData = null;
+        if (dataFrom != null && !dataFrom.isEmpty()) {
+            fetchedData = dataTraerService.getData(dataFrom);
+        }
+
+        // Procesamiento de nodos
         if ("TRIGGER".equalsIgnoreCase(tipoNodo)) {
             for (String node : nodeConfiguration) {
                 if ("TransformerData".equalsIgnoreCase(node)) {
-                    processedData = transformerDataService.execute(idProyecto, processedData);
+                    processedData = transformerDataService.execute(idProyecto, data, fetchedData); // Se asegura que TransformerData procese correctamente el código Python
                 } else if ("DataEnvidio".equalsIgnoreCase(node)) {
                     tempEntrega = dataEnvidioService.execute(idProyecto, processedData);
                 }
@@ -40,7 +50,7 @@ public class NodeProcessor {
             if (!nodeConfiguration.isEmpty()) {
                 String node = nodeConfiguration.get(0);
                 if ("TransformerData".equalsIgnoreCase(node)) {
-                    processedData = transformerDataService.execute(idProyecto, processedData);
+                    processedData = transformerDataService.execute(idProyecto, data, fetchedData);
                 } else if ("DataEnvidio".equalsIgnoreCase(node)) {
                     tempEntrega = dataEnvidioService.execute(idProyecto, processedData);
                 }
@@ -50,7 +60,6 @@ public class NodeProcessor {
         }
 
         response.put("data", processedData);
-        response.put("nodeConfiguration", nodeConfiguration);
         if (tempEntrega != null) {
             response.put("tempEntrega", tempEntrega);
         }
