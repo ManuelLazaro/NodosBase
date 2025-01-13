@@ -1,18 +1,16 @@
 package nodo.automti.nodos.TransformerData.service;
 
-import nodo.automti.nodos.TransformerData.model.TransformerDataEntity;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import nodo.automti.nodos.TransformerData.repository.TransformerDataRepository;
 import org.python.core.*;
 import org.python.util.PythonInterpreter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.StringWriter;
-import java.math.BigDecimal;
-import java.sql.Date;
-import java.sql.Timestamp;
-import java.util.List;
-import java.util.Map;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 
 @Service
 public class TransformerDataService {
@@ -20,79 +18,80 @@ public class TransformerDataService {
     @Autowired
     private TransformerDataRepository repository;
 
-    public String execute(String idProyecto, String data, List<Map<String, Object>> entityData) {
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    public Map<String, Object> processNode(String functionName, String idProyecto, String pythonCode, Map<String, Object> params) {
+        if (pythonCode == null || pythonCode.trim().isEmpty()) {
+            return createErrorResponse("No se proporcionó código Python en el parámetro 'data'");
+        }
+
         try (PythonInterpreter python = new PythonInterpreter()) {
-            StringWriter output = new StringWriter();
-            python.setOut(output);
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            PrintStream printStream = new PrintStream(outputStream, true, StandardCharsets.UTF_8.name());
 
-            // Preparar datos para kwargs
-            PyDictionary pyKwargs = new PyDictionary();
-            pyKwargs.__setitem__(new PyString("clientes"), convertToPyList(entityData));
+            python.setOut(printStream);
 
-            // Registrar kwargs en el intérprete
-            python.set("kwargs", pyKwargs);
+            // Configuración inicial del intérprete de Python
+            python.exec("# -*- coding: utf-8 -*-");
+            python.exec("import sys");
+            python.exec("import json");
+            python.exec("from io import StringIO");
+
+            // Pasar parámetros como kwargs
+            PyDictionary pyParams = new PyDictionary();
+            params.forEach((key, value) -> pyParams.put(Py.newString(key), convertToPyObject(value)));
+            python.set("kwargs", pyParams);
 
             // Ejecutar el código Python
-            String wrappedCode = String.format(
-                    "try:\n" +
-                            "    %s\n" +
-                            "except Exception as e:\n" +
-                            "    print('Error en la ejecución del código Python:', str(e))",
-                    data.replace("\n", "\n    ")  // Indentar el código del usuario
-            );
+            python.exec(pythonCode);
 
-            python.exec(wrappedCode);
+            // Capturar la salida del código Python
+            String result = outputStream.toString(StandardCharsets.UTF_8.name()).trim();
 
-            String result = output.toString().trim();
+            // Imprimir la salida para depuración
+            System.out.println("Salida del código Python: " + result);
+
+            // Validar que la salida no esté vacía y sea válida
             if (result.isEmpty()) {
-                result = "La ejecución fue exitosa pero no produjo ninguna salida.";
+                return createErrorResponse("No se generó ningún resultado");
             }
 
-            // Guardar en la base de datos
-            TransformerDataEntity entity = repository.findByIdProyecto(idProyecto)
-                    .orElse(new TransformerDataEntity());
-            entity.setIdProyecto(idProyecto);
-            entity.setInputData(data);
-            entity.setOutputData(result);
-            repository.save(entity);
-
-            return result;
-
+            // Intentar decodificar la salida
+            try {
+                return objectMapper.readValue(result, Map.class);
+            } catch (Exception e) {
+                return createErrorResponse("Salida no válida de Python: " + result);
+            }
         } catch (Exception e) {
-            String errorMsg = "Error en la ejecución: " + e.getMessage();
-            // Guardar el error en la base de datos
-            TransformerDataEntity entity = repository.findByIdProyecto(idProyecto)
-                    .orElse(new TransformerDataEntity());
-            entity.setIdProyecto(idProyecto);
-            entity.setInputData(data);
-            entity.setOutputData(errorMsg);
-            repository.save(entity);
-            return errorMsg;
+            return createErrorResponse("Error en la transformación: " + e.getMessage());
         }
     }
 
-    private PyList convertToPyList(List<Map<String, Object>> data) {
-        PyList pyList = new PyList();
-        for (Map<String, Object> item : data) {
-            PyDictionary pyDict = new PyDictionary();
-            item.forEach((key, value) -> pyDict.__setitem__(new PyString(key), convertValue(value)));
-            pyList.append(pyDict);
+    private PyObject convertToPyObject(Object value) {
+        if (value == null) return Py.None;
+
+        if (value instanceof Map) {
+            PyDictionary dict = new PyDictionary();
+            ((Map<?, ?>) value).forEach((k, v) -> dict.put(convertToPyObject(k), convertToPyObject(v)));
+            return dict;
+        } else if (value instanceof List) {
+            PyList list = new PyList();
+            ((List<?>) value).forEach(item -> list.append(convertToPyObject(item)));
+            return list;
+        } else if (value instanceof Number) {
+            return value instanceof Integer || value instanceof Long ? Py.newInteger(((Number) value).intValue()) : Py.newFloat(((Number) value).doubleValue());
+        } else if (value instanceof Boolean) {
+            return (Boolean) value ? Py.True : Py.False;
+        } else if (value instanceof String) {
+            return Py.newString((String) value);
         }
-        return pyList;
+
+        return Py.newString(value.toString());
     }
 
-    private PyObject convertValue(Object value) {
-        if (value instanceof BigDecimal) {
-            return new PyFloat(((BigDecimal) value).doubleValue());
-        } else if (value instanceof Timestamp) {
-            return new PyString(value.toString());
-        } else if (value instanceof Date) {
-            return new PyString(value.toString());
-        } else if (value instanceof byte[]) {
-            return new PyString(new String((byte[]) value));
-        } else if (value == null) {
-            return Py.None;
-        }
-        return new PyString(value.toString());
+    private Map<String, Object> createErrorResponse(String message) {
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", message);
+        return errorResponse;
     }
 }
