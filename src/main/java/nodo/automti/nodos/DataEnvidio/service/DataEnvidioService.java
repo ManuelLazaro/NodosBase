@@ -8,10 +8,10 @@ import java.util.Map;
 @Service
 public class DataEnvidioService {
 
-    public void execute(String idProyecto, List<Map<String, Object>> datos) {
-        System.out.println("Procesando datos para el proyecto: " + idProyecto);
-        for (Map<String, Object> item : datos) {
-            System.out.println("Elemento procesado: " + item);
+    public void execute(String idProyecto, List<Map<String, Object>> ventas) {
+        System.out.println("Procesando ventas para el proyecto: " + idProyecto);
+        for (Map<String, Object> venta : ventas) {
+            System.out.println("Venta procesada: " + venta);
         }
     }
 }

@@ -1,12 +1,8 @@
-
 package nodo.automti.nodos.TransformerData.service;
 
 import nodo.automti.nodos.TransformerData.model.TransformerDataEntity;
 import nodo.automti.nodos.TransformerData.repository.TransformerDataRepository;
-import org.python.core.PyDictionary;
-import org.python.core.PyList;
-import org.python.core.PyObject;
-import org.python.core.PyString;
+import org.python.core.*;
 import org.python.util.PythonInterpreter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -17,7 +13,6 @@ import java.sql.Date;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Service
 public class TransformerDataService {
@@ -25,36 +20,19 @@ public class TransformerDataService {
     @Autowired
     private TransformerDataRepository repository;
 
-    public String execute(String idProyecto, String data, List<Map<String, Object>> fetchedData) {
+    public String execute(String idProyecto, String data, List<Map<String, Object>> entityData) {
         try (PythonInterpreter python = new PythonInterpreter()) {
             StringWriter output = new StringWriter();
             python.setOut(output);
 
-            // Convertir todos los tipos de datos a formatos compatibles con Python
-            List<Map<String, PyObject>> convertedData = fetchedData.stream()
-                    .map(item -> item.entrySet().stream()
-                            .collect(Collectors.toMap(
-                                    Map.Entry::getKey,
-                                    entry -> convertValue(entry.getValue())
-                            )))
-                    .collect(Collectors.toList());
+            // Preparar datos para kwargs
+            PyDictionary pyKwargs = new PyDictionary();
+            pyKwargs.__setitem__(new PyString("clientes"), convertToPyList(entityData));
 
-            // Crear una lista Python con los datos convertidos
-            PyList pyList = new PyList();
-            for (Map<String, PyObject> item : convertedData) {
-                PyDictionary pyDict = new PyDictionary();
-                item.forEach((key, value) -> pyDict.__setitem__(new PyString(key), value));
-                pyList.append(pyDict);
-            }
+            // Registrar kwargs en el intérprete
+            python.set("kwargs", pyKwargs);
 
-            // Registrar los datos convertidos en el intérprete de Python
-            python.set("fetched_data", pyList);
-
-            // Configurar variables adicionales útiles
-            python.exec("import json");
-            python.exec("from datetime import datetime");
-
-            // Agregar un wrapper de seguridad alrededor del código del usuario
+            // Ejecutar el código Python
             String wrappedCode = String.format(
                     "try:\n" +
                             "    %s\n" +
@@ -63,7 +41,6 @@ public class TransformerDataService {
                     data.replace("\n", "\n    ")  // Indentar el código del usuario
             );
 
-            // Ejecutar el código Python
             python.exec(wrappedCode);
 
             String result = output.toString().trim();
@@ -94,9 +71,19 @@ public class TransformerDataService {
         }
     }
 
+    private PyList convertToPyList(List<Map<String, Object>> data) {
+        PyList pyList = new PyList();
+        for (Map<String, Object> item : data) {
+            PyDictionary pyDict = new PyDictionary();
+            item.forEach((key, value) -> pyDict.__setitem__(new PyString(key), convertValue(value)));
+            pyList.append(pyDict);
+        }
+        return pyList;
+    }
+
     private PyObject convertValue(Object value) {
         if (value instanceof BigDecimal) {
-            return new org.python.core.PyFloat(((BigDecimal) value).doubleValue());
+            return new PyFloat(((BigDecimal) value).doubleValue());
         } else if (value instanceof Timestamp) {
             return new PyString(value.toString());
         } else if (value instanceof Date) {
@@ -104,9 +91,8 @@ public class TransformerDataService {
         } else if (value instanceof byte[]) {
             return new PyString(new String((byte[]) value));
         } else if (value == null) {
-            return new PyString("");
+            return Py.None;
         }
-        // Para otros tipos, convertir a String
         return new PyString(value.toString());
     }
 }

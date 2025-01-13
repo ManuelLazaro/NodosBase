@@ -6,9 +6,7 @@ import nodo.automti.nodos.DataTraer.service.DataTraerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Component
 public class NodeProcessor {
@@ -29,34 +27,56 @@ public class NodeProcessor {
         response.put("tipoNodo", tipoNodo);
 
         String processedData = data;
-        Map<String, List<Map<String, Object>>> fetchedData = new HashMap<>();
+        List<Map<String, Object>> ventas = new ArrayList<>();
+
+        // Mantener un conjunto de clientes únicos
+        Set<Integer> processedClientes = new HashSet<>();
 
         // Procesamiento de nodos y obtención de datos
         for (String node : nodeConfiguration) {
             if (node.startsWith("DataTraer.")) {
-                String entidad = node.split("\\.")[1].toLowerCase();
-                List<Map<String, Object>> entidadData = dataTraerService.getData(entidad); // Renombrar la variable
+                // Obtener datos de clientes y productos
+                List<Map<String, Object>> clientes = dataTraerService.getData("cliente");
+                List<Map<String, Object>> productos = dataTraerService.getData("producto");
 
-                // Clasificación y etiquetado interno
-                for (Map<String, Object> item : entidadData) {
-                    item.put("etiqueta", entidad.equals("cliente") ? "cliente nuevo" : "producto nuevo");
+                if (productos.isEmpty() || clientes.isEmpty()) {
+                    System.out.println("No hay datos suficientes para procesar ventas.");
+                    continue;
                 }
 
-                fetchedData.put(entidad, entidadData);
-            } else if ("TransformerData".equalsIgnoreCase(node)) {
-                processedData = transformerDataService.execute(idProyecto, data, (List<Map<String, Object>>) fetchedData);
+                int productosIndex = 0;
+
+                // Asignar productos a clientes únicos
+                for (Map<String, Object> cliente : clientes) {
+                    int clienteId = (int) cliente.get("id");
+                    if (processedClientes.contains(clienteId)) {
+                        continue; // Saltar clientes ya procesados
+                    }
+
+                    processedClientes.add(clienteId); // Registrar cliente como procesado
+
+                    List<Map<String, Object>> productosPorCliente = new ArrayList<>();
+                    for (int i = 0; i < 3 && productosIndex < productos.size(); i++) {
+                        productosPorCliente.add(productos.get(productosIndex));
+                        productosIndex = (productosIndex + 1) % productos.size();
+                    }
+
+                    Map<String, Object> venta = new HashMap<>();
+                    venta.put("cliente", cliente);
+                    venta.put("productos", productosPorCliente);
+                    ventas.add(venta);
+                }
+            } else if (node.startsWith("TransformerData.")) {
+                String entidad = node.split("\\.")[1].toLowerCase();
+                processedData = transformerDataService.execute(idProyecto, data, ventas);
             } else if (node.startsWith("DataEnvidio.")) {
-                String entidad = node.split("\\.")[1].toLowerCase();
-                if (fetchedData.containsKey(entidad)) {
-                    dataEnvidioService.execute(idProyecto, fetchedData.get(entidad));
-                } else {
-                    System.err.println("Datos para la entidad '" + entidad + "' no encontrados en fetchedData.");
-                }
+                // Enviar datos procesados
+                dataEnvidioService.execute(idProyecto, ventas);
             }
         }
 
         response.put("data", processedData);
-        response.put("fetchedData", fetchedData);
+        response.put("ventas", ventas);
 
         return response;
     }
