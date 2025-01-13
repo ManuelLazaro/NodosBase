@@ -30,29 +30,21 @@ public class NodeProcessor {
         logger.info("Iniciando procesamiento para el proyecto: {}", idProyecto);
 
         Map<String, Object> response = initializeResponse(idProyecto, tipoNodo);
-        List<Map<String, Object>> ventas = new ArrayList<>();
 
         try {
+            List<Map<String, Object>> ventas = new ArrayList<>();
             for (String node : nodeConfiguration) {
                 Map<String, Object> nodeResult = processNode(node, idProyecto, data, ventas);
 
                 if (nodeResult.containsKey("error")) {
-                    return nodeResult;
+                    return nodeResult; // Finaliza si hay error en un nodo
                 }
 
                 if (nodeResult.containsKey("ventas")) {
                     ventas = (List<Map<String, Object>>) nodeResult.get("ventas");
                 }
 
-                nodeResult.forEach((key, value) -> {
-                    if (!"ventas".equals(key)) {
-                        response.put(key, value);
-                    }
-                });
-            }
-
-            if (!response.containsKey("error") && !response.containsKey("ventasResumen")) {
-                response.put("ventas", ventas);
+                nodeResult.forEach(response::putIfAbsent);
             }
 
             return response;
@@ -73,24 +65,24 @@ public class NodeProcessor {
 
     private Map<String, Object> processNode(String node, String idProyecto, String data, List<Map<String, Object>> ventas) {
         try {
-            if (node.startsWith("DataTraer.")) {
-                return processDataTraerNode(node, idProyecto);
-            } else if (node.startsWith("TransformerData.")) {
-                return processTransformerNode(node, idProyecto, data, ventas);
-            } else if (node.startsWith("DataEnvidio.")) {
-                return processDataEnvidioNode(node, idProyecto, ventas);
+            switch (getNodeCategory(node)) {
+                case "DataTraer":
+                    return processDataTraerNode(node, idProyecto);
+                case "TransformerData":
+                    return processTransformerNode(node, idProyecto, data, ventas);
+                case "DataEnvidio":
+                    return processDataEnvidioNode(node, idProyecto, ventas);
+                default:
+                    return generateErrorResponse("Tipo de nodo no soportado: " + node);
             }
-
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("error", "Tipo de nodo no soportado: " + node);
-            return errorResponse;
-
         } catch (Exception e) {
             logger.error("Error procesando nodo {}: ", node, e);
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("error", "Error procesando nodo " + node + ": " + e.getMessage());
-            return errorResponse;
+            return generateErrorResponse("Error procesando nodo " + node + ": " + e.getMessage());
         }
+    }
+
+    private String getNodeCategory(String node) {
+        return node.contains(".") ? node.split("\\.")[0] : node;
     }
 
     private Map<String, Object> processDataTraerNode(String node, String idProyecto) {
@@ -101,11 +93,8 @@ public class NodeProcessor {
     }
 
     private Map<String, Object> processTransformerNode(String node, String idProyecto, String data, List<Map<String, Object>> ventas) {
-        Map<String, Object> response = new HashMap<>();
-
         if (data == null || data.trim().isEmpty()) {
-            response.put("error", "El código Python no puede estar vacío");
-            return response;
+            return generateErrorResponse("El código Python no puede estar vacío");
         }
 
         Map<String, Object> params = new HashMap<>();
@@ -114,19 +103,10 @@ public class NodeProcessor {
 
         try {
             String functionName = node.substring(node.lastIndexOf('.') + 1);
-
-            Map<String, Object> result = transformerDataService.processNode(functionName, idProyecto, data, params);
-
-            if (result.containsKey("error")) {
-                return result;
-            }
-
-            response.putAll(result);
-            return response;
+            return transformerDataService.processNode(functionName, idProyecto, data, params);
         } catch (Exception e) {
-            logger.error("Error procesando nodo TransformerData: ", e);
-            response.put("error", "Error procesando TransformerData: " + e.getMessage());
-            return response;
+            logger.error("Error procesando TransformerData: ", e);
+            return generateErrorResponse("Error procesando TransformerData: " + e.getMessage());
         }
     }
 
@@ -135,5 +115,11 @@ public class NodeProcessor {
         Map<String, Object> response = new HashMap<>();
         response.put("ventas", ventas);
         return response;
+    }
+
+    private Map<String, Object> generateErrorResponse(String message) {
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", message);
+        return errorResponse;
     }
 }
